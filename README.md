@@ -1,1 +1,9 @@
-# nordvpn-tray
+# NordVPN Tray
+
+## Install
+
+### Download prebuilt
+
+### Build
+
+## Usage
