@@ -1,10 +1,10 @@
+from typing import TypeVar
 import re
-from typing import TypeVar, Dict, List
 
 T = TypeVar('T')
 
 
-def parse_string_list(data: str) -> List[str]:
+def parse_string_list(data: str) -> list[str]:
     lines = data.splitlines(False)
 
     content_line = lines.pop().strip()
@@ -19,7 +19,7 @@ def parse_string_list(data: str) -> List[str]:
     return items
 
 
-def parse_options_list(lines_str: str, attr_map: Dict[str, str], obj: T) -> T:
+def parse_options_list(lines_str: str, attr_map: dict[str, str], obj: T) -> T:
     lines = lines_str.splitlines(False)
     for line in lines:
         for attr, label in attr_map.items():

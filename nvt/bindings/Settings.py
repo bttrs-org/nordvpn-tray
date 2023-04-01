@@ -8,6 +8,7 @@ from .Process import Process
 class NVSettings:
     autoconnect: Optional[bool] = None
     technology: Optional[str] = None
+    protocol: Optional[str] = None
     firewall: Optional[bool] = None
     fwmark: Optional[str] = None
     routing: Optional[bool] = None
@@ -22,12 +23,13 @@ class NVSettings:
 
 class SettingsProcess(Process[NVSettings]):
     def run(self):
-        return super().start_process(['settings'])
+        return super()._start_process(['settings'])
 
-    def parse_output(self, data: str) -> NVSettings:
+    def _parse_output(self, data: str) -> NVSettings:
         attr_map = {
             'autoconnect': 'Auto-connect',
             'technology': 'Technology',
+            'protocol': 'Protocol',
             'firewall': 'Firewall',
             'fwmark': 'Firewall Mark',
             'routing': 'Routing',

@@ -20,9 +20,9 @@ class NVStatus:
 
 class StatusProcess(Process[NVStatus]):
     def run(self):
-        return super().start_process(['status'])
+        return super()._start_process(['status'])
 
-    def parse_output(self, data: str) -> NVStatus:
+    def _parse_output(self, data: str) -> NVStatus:
         attr_map = {
             "status": "Status",
             "country": "Country",
@@ -39,8 +39,11 @@ class StatusProcess(Process[NVStatus]):
 
 
 class QuickConnectProcess(Process[None]):
-    def run(self):
-        return super().start_process(['connect'])
+    def run(self, country: Optional[str]):
+        params = ['connect']
+        if country:
+            params.append(country)
+        return super()._start_process(params)
 
 
 class ConnectProcess(Process[None]):
@@ -56,9 +59,9 @@ class ConnectProcess(Process[None]):
             if city:
                 params.append(city)
 
-        return super().start_process(params)
+        return super()._start_process(params)
 
 
 class DisconnectProcess(Process[None]):
     def run(self):
-        return super().start_process(["disconnect"])
+        return super()._start_process(["disconnect"])

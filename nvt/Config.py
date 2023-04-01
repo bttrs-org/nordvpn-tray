@@ -1,6 +1,6 @@
 import os
 import configparser
-from typing import Optional, List, Tuple
+from typing import Optional
 from .utils import user_data_dir
 
 config_path = os.path.join(user_data_dir(), 'config.ini')
@@ -10,20 +10,32 @@ config.read(config_path)
 LAST_CONNECTED_SECTION = 'last_connected'
 
 
+def save_quick_connect(country: Optional[str]):
+    if country:
+        config.set(config.default_section, 'quick_connect', country)
+    else:
+        config.remove_option(config.default_section, 'quick_connect')
+    _save()
+
+
+def get_quick_connect() -> Optional[str]:
+    return config.get(config.default_section, 'quick_connect', fallback=None)
+
+
 def save_dimension(w: int, h: int):
     config.set(config.default_section, 'width', str(w))
     config.set(config.default_section, 'height', str(h))
     _save()
 
 
-def get_dimension() -> Tuple[Optional[int], Optional[int]]:
+def get_dimension() -> tuple[Optional[int], Optional[int]]:
     w = config.getint(config.default_section, 'width', fallback=None)
     h = config.getint(config.default_section, 'height', fallback=None)
     return w, h
 
 
-def get_last_connected() -> List[List[str]]:
-    items: List[List[str]] = []
+def get_last_connected() -> list[list[str]]:
+    items: list[list[str]] = []
 
     for i in _get_last_connected():
         items.append(i.split(':'))
@@ -46,7 +58,7 @@ def add_last_connected(country: str, city: Optional[str], server_number: Optiona
     _save()
 
 
-def _get_last_connected() -> List[str]:
+def _get_last_connected() -> list[str]:
     if not config.has_section(LAST_CONNECTED_SECTION):
         return []
 

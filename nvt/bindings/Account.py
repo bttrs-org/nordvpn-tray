@@ -12,9 +12,9 @@ class Account:
 
 class AccountProcess(Process[Account]):
     def run(self):
-        return super().start_process(['account'])
+        return super()._start_process(['account'])
 
-    def parse_output(self, data: str) -> Account:
+    def _parse_output(self, data: str) -> Account:
         attr_map = {
             "email": "Email Address",
             "status": "VPN Service",

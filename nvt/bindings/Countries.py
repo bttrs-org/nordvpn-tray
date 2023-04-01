@@ -1,4 +1,6 @@
-from typing import Tuple, List
+from typing import Optional
+from PySide6.QtGui import QIcon
+from nvt.utils import country_icon
 from .Process import Process
 from .utils import parse_string_list
 
@@ -16,14 +18,19 @@ NV_COUNTRIES = {
 }
 
 
-class CountriesProcess(Process[List[Tuple[str, str]]]):
+class CountriesProcess(Process[list[tuple[str, Optional[str], Optional[QIcon]]]]):
     def run(self):
-        return super().start_process(['countries'])
+        return super()._start_process(['countries'])
 
-    def parse_output(self, data: str) -> List[Tuple[str, str]]:
+    def _parse_output(self, data: str) -> list[tuple[str, Optional[str], Optional[QIcon]]]:
+        """
+        Returns: List of (country, country_code, icon_path)
+        """
         country_names = parse_string_list(data)
         countries = []
-        for n in country_names:
-            countries.append((n, NV_COUNTRIES.get(n)))
+        for name in country_names:
+            code = NV_COUNTRIES.get(name)
+            ico_file = country_icon(code)
+            countries.append((name, code, ico_file))
 
         return countries

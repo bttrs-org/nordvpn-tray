@@ -1,4 +1,3 @@
-from typing import List
 from .Process import Process
 from .utils import parse_string_list
 
@@ -16,9 +15,9 @@ COUNTRIES = {
 }
 
 
-class CitiesProcess(Process[List[str]]):
+class CitiesProcess(Process[list[str]]):
     def run(self, country: str):
-        return super().start_process(['cities', country])
+        return super()._start_process(['cities', country])
 
-    def parse_output(self, data: str) -> List[str]:
+    def _parse_output(self, data: str) -> list[str]:
         return parse_string_list(data)

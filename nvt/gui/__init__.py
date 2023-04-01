@@ -1,1 +1,1 @@
-from .SystemTray import SystemTrayIcon
+from .SystemTray import SystemTray

@@ -1,11 +1,11 @@
-import os
 import logging
 from typing import Optional
 from PySide6.QtCore import QCoreApplication, QTimer
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from nvt import Config
-from nvt.utils import icons_dir
+from nvt.utils import country_icon, svg_icon, png_icon
+from nvt.Config import get_quick_connect
 from nvt.bindings import StatusProcess, QuickConnectProcess, NVStatus, DisconnectProcess, ConnectProcess
 from nvt.bindings.Countries import NV_COUNTRIES
 from .SettingsWindow import SettingsWindow
@@ -13,11 +13,11 @@ from .SettingsWindow import SettingsWindow
 log = logging.getLogger(__name__)
 
 
-class SystemTrayIcon(QSystemTrayIcon):
+class SystemTray(QSystemTrayIcon):
     loading: bool
     connecting: bool
     status: NVStatus
-    window: Optional[SettingsWindow]
+    main_window: Optional[SettingsWindow]
     error_action: Optional[QAction]
     status_action: QAction
     quick_connect_action: QAction
@@ -26,7 +26,7 @@ class SystemTrayIcon(QSystemTrayIcon):
     timer: QTimer
 
     def __init__(self, parent):
-        QSystemTrayIcon.__init__(self, QIcon(os.path.join(icons_dir(), 'icon.png')), parent)
+        QSystemTrayIcon.__init__(self, png_icon('icon'), parent)
         self.status_process = None
         self.qc_process = None
         self.c_process = None
@@ -35,7 +35,7 @@ class SystemTrayIcon(QSystemTrayIcon):
         self.loading = False
         self.connecting = False
         self.status = NVStatus()
-        self.window = None
+        self.main_window = None
 
         self.setToolTip("NordVPN")
 
@@ -47,34 +47,37 @@ class SystemTrayIcon(QSystemTrayIcon):
 
         self.menu.addSeparator()
 
-        self.quick_connect_action = self.menu.addAction(QIcon.fromTheme("view-refresh"), "Quick Connect")
-        self.quick_connect_action.triggered.connect(self.quick_connect_vpn)
-        self.disconnect_action = self.menu.addAction(QIcon.fromTheme("network-offline"), "Disconnect")
-        self.disconnect_action.triggered.connect(self.disconnect_vpn)
+        self.quick_connect_action = self.menu.addAction(svg_icon('reconnect'), "Quick Connect")
+        self.quick_connect_action.triggered.connect(self._quick_connect_vpn)
+        self.disconnect_action = self.menu.addAction(svg_icon('disconnect'), "Disconnect")
+        self.disconnect_action.triggered.connect(self._disconnect_vpn)
         self.last_connected_menu = self.menu.addMenu("Last connected")
-        self.render_last_connected()
+        self._render_last_connected()
 
         self.menu.addSeparator()
 
-        settings_action = self.menu.addAction(QIcon.fromTheme("preferences-other"), "Settings")
-        settings_action.triggered.connect(self.open_settings)
-        exit_action = self.menu.addAction(QIcon.fromTheme("application-exit"), "Exit")
-        exit_action.triggered.connect(self.exit_app)
+        settings_action = self.menu.addAction(svg_icon('settings'), "Settings")
+        settings_action.triggered.connect(self._open_settings)
+        exit_action = self.menu.addAction(svg_icon('exit'), "Exit")
+        exit_action.triggered.connect(self._exit_app)
 
-        self.activated.connect(self.open_settings)
+        self.activated.connect(self._open_settings)
         self.setContextMenu(self.menu)
 
-        self.load_status()
+        self._load_status()
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.load_status())
-        self.timer.setInterval(1000 * 60)
-        self.timer.start()
+        self.timer.timeout.connect(self._load_status)
+        self.timer.start(1000 * 60)
 
-    def render_last_connected(self):
+    def _render_last_connected(self):
         items = Config.get_last_connected()
 
         self.last_connected_menu.clear()
+
+        def create_cb(country: str, city: Optional[str], node: Optional[str]):
+            return lambda: self._connect_vpn(country, city, node)
+
         for country, city, node in items:
             code = NV_COUNTRIES.get(country)
             label = country.replace('_', ' ')
@@ -83,50 +86,50 @@ class SystemTrayIcon(QSystemTrayIcon):
             elif city:
                 label += ' (' + city.replace('_', ' ') + ')'
             action = self.last_connected_menu.addAction(label)
-            action.triggered.connect(lambda: self.connect_vpn(country, city, node))
-            ico_file = os.path.join(icons_dir(), 'countries', f"{code.lower()}.png")
-            if ico_file:
-                action.setIcon(QIcon(ico_file))
+            icon = country_icon(code)
+            if icon:
+                action.setIcon(icon)
+            action.triggered.connect(create_cb(country, city, node))
 
-    def update_disabled_items(self):
+    def _update_disabled_items(self):
         self.quick_connect_action.setDisabled(self.connecting)
         self.disconnect_action.setDisabled(self.connecting)
         for action in self.last_connected_menu.actions():
             action.setDisabled(self.connecting)
 
-    def set_loading(self, loading: bool):
+    def _set_loading(self, loading: bool):
         self.loading = loading
 
-    def set_connecting(self, connecting: bool):
+    def _set_connecting(self, connecting: bool):
         self.connecting = connecting
-        self.update_disabled_items()
-        if self.window:
-            self.window.set_connecting(connecting)
+        self._update_disabled_items()
+        if self.main_window:
+            self.main_window.set_connecting(connecting)
 
-    def set_status(self, status: NVStatus):
+    def _set_status(self, status: NVStatus):
         self.status = status
-        if self.window:
-            self.window.set_status(self.status)
+        if self.main_window:
+            self.main_window.set_status(self.status)
 
-    def set_error(self, msg: Optional[str] = None):
+    def _set_error(self, msg: Optional[str] = None):
         if self.error_action:
             self.menu.removeAction(self.error_action)
         if msg:
             log.error(msg)
-            self.error_action = QAction(QIcon.fromTheme('dialog-error'), msg)
+            self.error_action = QAction(svg_icon('error'), msg)
             self.menu.insertAction(self.status_action, self.error_action)
             self.error_action.setDisabled(True)
-        if self.window:
-            self.window.set_connect_error(msg)
+        if self.main_window:
+            self.main_window.set_connect_error(msg)
 
-    def load_status(self):
+    def _load_status(self):
         if self.loading:
             return
 
         def done(status: NVStatus):
             self.status_process = None
-            self.set_status(status)
-            self.set_loading(False)
+            self._set_status(status)
+            self._set_loading(False)
 
             if status.status.lower() == 'connected':
                 status_text = "Connected to:\n{} ({})\n{} ({})\n{} ({})\n{}\n{}".format(
@@ -139,101 +142,106 @@ class SystemTrayIcon(QSystemTrayIcon):
                     status.uptime,
                     status.transfer,
                 )
+                self.setIcon(png_icon('icon_connected'))
+            elif status.status.lower() == 'disconnected':
+                status_text = status.status
+                self.setIcon(png_icon('icon_disconnected'))
             else:
                 status_text = status.status
+                self.setIcon(png_icon('icon'))
             self.status_action.setText(status_text)
 
         def error(e):
             self.status_process = None
-            self.set_loading(False)
+            self._set_loading(False)
             self.status_action.setText('')
-            self.set_error(f"Load status failed: {e}")
+            self._set_error(f"Load status failed: {e}")
 
-        self.set_loading(True)
+        self._set_loading(True)
         self.status_action.setText('Loading...')
         self.status_process = StatusProcess(on_finish=done, on_error=error).run()
 
-    def quick_connect_vpn(self):
+    def _quick_connect_vpn(self):
         if self.connecting:
             return
 
         def done():
             self.qc_process = None
-            self.set_connecting(False)
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._update_disabled_items()
+            self._load_status()
 
         def error(e):
             self.qc_process = None
-            self.set_connecting(False)
-            self.set_error(f"Quick connect failed: {e}")
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._set_error(f"Quick connect failed: {e}")
+            self._update_disabled_items()
+            self._load_status()
 
-        self.set_connecting(True)
-        self.set_status(NVStatus("Connecting"))
+        self._set_connecting(True)
+        self._set_status(NVStatus("Connecting"))
         self.status_action.setText("Connecting...")
-        self.update_disabled_items()
-        self.qc_process = QuickConnectProcess(on_finish=done, on_error=error).run()
+        self._update_disabled_items()
+        country = get_quick_connect()
+        self.qc_process = QuickConnectProcess(on_finish=done, on_error=error).run(country)
 
-    def connect_vpn(self, country: str, city: Optional[str], server_number: Optional[str]):
+    def _connect_vpn(self, country: str, city: Optional[str], server_number: Optional[str]):
         if self.connecting:
             return
 
         def done():
             self.c_process = None
-            self.set_connecting(False)
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._update_disabled_items()
+            self._load_status()
             Config.add_last_connected(country, city, server_number)
-            self.render_last_connected()
+            self._render_last_connected()
 
         def error(e):
             self.c_process = None
-            self.set_connecting(False)
-            self.set_error(f"Connect failed: {e}")
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._set_error(f"Connect failed: {e}")
+            self._update_disabled_items()
+            self._load_status()
 
-        self.set_connecting(True)
-        self.set_status(NVStatus("Connecting"))
+        self._set_connecting(True)
+        self._set_status(NVStatus("Connecting"))
         self.status_action.setText("Connecting...")
-        self.update_disabled_items()
+        self._update_disabled_items()
         self.c_process = ConnectProcess(on_finish=done, on_error=error).run(country, city, server_number)
 
-    def disconnect_vpn(self):
+    def _disconnect_vpn(self):
         if self.connecting:
             return
 
         def done():
             self.d_process = None
-            self.set_connecting(False)
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._update_disabled_items()
+            self._load_status()
 
         def error(e):
             self.d_process = None
-            self.set_connecting(False)
-            self.set_error(f"Disconnect failed: {e}")
-            self.update_disabled_items()
-            self.load_status()
+            self._set_connecting(False)
+            self._set_error(f"Disconnect failed: {e}")
+            self._update_disabled_items()
+            self._load_status()
 
-        self.set_connecting(True)
-        self.set_status(NVStatus("Disconnecting"))
+        self._set_connecting(True)
+        self._set_status(NVStatus("Disconnecting"))
         self.status_action.setText("Disconnecting...")
-        self.update_disabled_items()
+        self._update_disabled_items()
         self.d_process = DisconnectProcess(on_finish=done, on_error=error).run()
 
-    def open_settings(self):
-        if not self.window:
-            self.window = SettingsWindow(self.quick_connect_vpn, self.connect_vpn, self.disconnect_vpn)
+    def _open_settings(self):
+        if not self.main_window:
+            self.main_window = SettingsWindow(self._quick_connect_vpn, self._connect_vpn, self._disconnect_vpn)
 
-        self.window.set_connecting(self.connecting)
-        self.window.set_status(self.status)
-
-        self.window.show()
-        self.window.activateWindow()
+        self.main_window.set_connecting(self.connecting)
+        self.main_window.set_status(self.status)
+        self.main_window.show()
+        self.main_window.activateWindow()
 
     @staticmethod
-    def exit_app():
+    def _exit_app():
         QCoreApplication.exit()

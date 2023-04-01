@@ -1,11 +1,46 @@
+import contextlib
 import logging
-from typing import Dict, Optional
+from typing import Optional, Callable
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGraphicsOpacityEffect, QComboBox
+from nvt.Config import get_quick_connect, save_quick_connect
 from nvt.bindings import SettingsProcess, NVSettings
 from .ErrorRow import ErrorRow
 
 log = logging.getLogger(__name__)
+
+
+class DefaultCountry(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        layout = QHBoxLayout()
+        layout.setSpacing(0)
+        layout.setContentsMargins(5, 0, 5, 0)
+        layout.addWidget(QLabel('Quick connect to: '))
+        self.countries = QComboBox()
+        layout.addWidget(self.countries)
+        self.setLayout(layout)
+
+    def set_countries(self, countries: list[tuple[str, str]]):
+        with contextlib.suppress(RuntimeError):
+            self.countries.currentIndexChanged.disconnect(self._value_changed)
+        self.countries.clear()
+        self.countries.addItem('# fastest')
+        for country, code, icon in countries:
+            self.countries.addItem(icon, country.replace("_", " "), userData=country)
+
+        saved = get_quick_connect()
+        if saved:
+            idx = self.countries.findData(saved)
+            self.countries.setCurrentIndex(idx)
+        else:
+            self.countries.setCurrentIndex(0)
+
+        self.countries.currentIndexChanged.connect(self._value_changed)
+
+    def _value_changed(self):
+        save_quick_connect(self.countries.currentData())
 
 
 class OptionRow(QWidget):
@@ -46,11 +81,15 @@ class Separator(QFrame):
 
 
 class Settings(QWidget):
-    option_rows: Dict[str, OptionRow]
+    load_countries: Callable[[], None]
+    default_country: DefaultCountry
+    option_rows: dict[str, OptionRow]
     error_row: ErrorRow
 
-    def __init__(self, parent=None):
+    def __init__(self, load_countries: Callable[[], None], parent=None):
         super().__init__(parent)
+        self.load_countries = load_countries
+
         self.inputs = dict()
         self.option_rows = dict()
         self.load_process = None
@@ -60,12 +99,19 @@ class Settings(QWidget):
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.layout.setSpacing(5)
 
+        # default quick connect
+        self.default_country = DefaultCountry()
+        self.layout.addWidget(self.default_country)
+        self.layout.addSpacing(16)
+
+        # cli option
         def create_option_row(key: str, label: str):
             self.option_rows[key] = OptionRow(label)
             self.layout.addWidget(self.option_rows[key])
             self.layout.addWidget(Separator())
 
         create_option_row('technology', 'Technology')
+        create_option_row('protocol', 'Protocol')
         create_option_row('autoconnect', 'Auto-connect')
         create_option_row('killswitch', 'Kill Switch')
         create_option_row('routing', 'Routing')
@@ -89,16 +135,13 @@ class Settings(QWidget):
         self.setLayout(self.layout)
         self.load_settings()
 
-    def set_error(self, msg: Optional[str] = None):
-        if msg:
-            self.error_row.set_msg(msg)
-        else:
-            self.error_row.clear()
+    def set_countries(self, countries: list[tuple[str, str]]):
+        self.default_country.set_countries(countries)
 
     def load_settings(self):
         if self.load_process:
             return
-        self.set_error()
+        self._set_error()
 
         def done(settings: NVSettings):
             self.load_process = None
@@ -108,6 +151,12 @@ class Settings(QWidget):
         def error(e):
             self.load_process = None
             log.error(e)
-            self.set_error(e)
+            self._set_error(e)
 
         self.load_process = SettingsProcess(on_finish=done, on_error=error).run()
+
+    def _set_error(self, msg: Optional[str] = None):
+        if msg:
+            self.error_row.set_msg(msg)
+        else:
+            self.error_row.clear()
